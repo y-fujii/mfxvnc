@@ -22,13 +22,15 @@ impl TightEncoder {
 		assert!( self.buffer.capacity() >= (x1 - x0) * (y1 - y0) * 3 );
 
 		/*
+		self.buffer.clear();
 		unsafe {
 			let screen_u8x4 = screen.as_ptr() as *const u8x4;
 			for y in y0 .. y1 {
 				for x in x0 .. x1 {
 					let dst = *screen_u8x4.add( w * y + x );
-					dst.store_unaligned_unchecked( &mut self.buffer[buffer_index ..] );
-					buffer_index += 3;
+					self.buffer.push( dst.extract( 2 ) );
+					self.buffer.push( dst.extract( 1 ) );
+					self.buffer.push( dst.extract( 0 ) );
 				}
 			}
 		}
