@@ -37,23 +37,23 @@ impl VncServer {
 		// => protocol version.
 		stream.write_all( b"RFB 003.008\n" )?;
 		// <= protocol version.
-        let mut buf = [0; 12];
-        stream.read_exact( &mut buf )?;
-        if buf != *b"RFB 003.008\n" {
+		let mut buf = [0; 12];
+		stream.read_exact( &mut buf )?;
+		if buf != *b"RFB 003.008\n" {
 			stream.write_all( b"\x00\x00\x00\x06error." )?;
 			return Err( io::Error::new( io::ErrorKind::Other, "protocol version" ) );
-        }
+		}
 
 		// => security types.
-        stream.write_all( &[1, 1] )?;
+		stream.write_all( &[1, 1] )?;
 		// <= security type.
-        if stream.read_u8()? != 1 {
+		if stream.read_u8()? != 1 {
 			stream.write_all( b"\x00\x00\x00\x06error." )?;
 			return Err( io::Error::new( io::ErrorKind::Other, "security type" ) );
 		}
 
 		// security result.
-        stream.write_u32::<BigEndian>( 0 )?;
+		stream.write_u32::<BigEndian>( 0 )?;
 
 		// client init.
 		stream.read_u8()?;
