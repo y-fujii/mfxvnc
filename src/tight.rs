@@ -1,16 +1,18 @@
-use flate2;
+use miniz_oxide::deflate;
 
 
 pub struct TightEncoder {
 	buffer: Vec<u8>,
-	compressor: flate2::Compress,
+	compressor: deflate::core::CompressorOxide,
 }
 
 impl TightEncoder {
 	pub fn new( pixels: usize ) -> Self {
 		TightEncoder{
 			buffer: Vec::with_capacity( pixels * 3 ),
-			compressor: flate2::Compress::new( flate2::Compression::fast(), true ),
+			compressor: deflate::core::CompressorOxide::new(
+				deflate::core::deflate_flags::TDEFL_WRITE_ZLIB_HEADER | deflate::core::deflate_flags::TDEFL_GREEDY_PARSING_FLAG | 1,
+			),
 		}
 	}
 
@@ -96,8 +98,12 @@ impl TightEncoder {
 			let len2_index = out.len();
 			out.push( 0 );
 			let data_index = out.len();
-			self.compressor.compress_vec( &self.buffer, out, flate2::FlushCompress::Sync ).unwrap();
-			let size = out.len() - data_index;
+			let capacity = out.capacity();
+			unsafe { out.set_len( capacity ) };
+			let (_, _, size) = deflate::core::compress(
+				&mut self.compressor, &self.buffer, &mut out[data_index..], deflate::core::TDEFLFlush::Sync
+			);
+			unsafe { out.set_len( data_index + size ) };
 			assert!( size < 1 << 22 );
 			out[len0_index] = 0x80 | ( size        & 0x7f) as u8;
 			out[len1_index] = 0x80 | ((size >>  7) & 0x7f) as u8;

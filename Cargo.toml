@@ -6,7 +6,7 @@ authors = ["Yasuhiro Fujii <y-fujii@mimosa-pudica.net>"]
 [dependencies]
 byteorder = "*"
 scrap = "*"
-flate2 = "*"
+miniz_oxide = "*"
 
 [profile.release]
 panic = "abort"

@@ -1,6 +1,6 @@
 #![feature( stdsimd )]
 extern crate byteorder;
-extern crate flate2;
+extern crate miniz_oxide;
 extern crate scrap;
 mod tight;
 use std::*;
