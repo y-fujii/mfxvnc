@@ -57,19 +57,23 @@ impl TightEncoder {
 				}
 			}
 			for y in y0 + 1 .. y1 {
+				let s00 = screen_u8x4.add( w * (y - 0) - 0 );
+				let s01 = screen_u8x4.add( w * (y - 1) - 0 );
+				let s10 = screen_u8x4.add( w * (y - 0) - 1 );
+				let s11 = screen_u8x4.add( w * (y - 1) - 1 );
 				/* x == x0 */ {
-					let v00 = *screen_u8x4.add( w * (y - 0) + x0 );
-					let v01 = *screen_u8x4.add( w * (y - 1) + x0 );
+					let v00 = *s00.add( x0 );
+					let v01 = *s01.add( x0 );
 					let dst = v00 - v01;
 					self.buffer.push( dst.extract( 2 ) );
 					self.buffer.push( dst.extract( 1 ) );
 					self.buffer.push( dst.extract( 0 ) );
 				}
 				for x in x0 + 1 .. x1 {
-					let v00 = *screen_u8x4.add( w * (y - 0) + (x - 0) );
-					let v01 = *screen_u8x4.add( w * (y - 1) + (x - 0) );
-					let v10 = *screen_u8x4.add( w * (y - 0) + (x - 1) );
-					let v11 = *screen_u8x4.add( w * (y - 1) + (x - 1) );
+					let v00 = *s00.add( x );
+					let v01 = *s01.add( x );
+					let v10 = *s10.add( x );
+					let v11 = *s11.add( x );
 					let w01 = i16x4::from( v01 );
 					let w10 = i16x4::from( v10 );
 					let w11 = i16x4::from( v11 );
