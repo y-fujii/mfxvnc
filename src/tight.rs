@@ -43,41 +43,35 @@ impl TightEncoder {
 			self.buffer.set_len( (x1 - x0) * (y1 - y0) * 3 );
 			let mut buffer_index = 0;
 			/* y == y0 */ {
+				let s00 = screen_u8x4.add( w * y0 - 0 );
+				let s10 = screen_u8x4.add( w * y0 - 1 );
 				/* x == x0 */ {
-					let dst = *screen_u8x4.add( w * y0 + x0 );
+					let dst = *s00.add( x0 );
 					u8x4::write_to_slice_unaligned_unchecked( shuffle!( dst, [2, 1, 0, 3] ), &mut self.buffer[buffer_index..] );
 					buffer_index += 3;
 				}
 				for x in x0 + 1 .. x1 {
-					let v00 = *screen_u8x4.add( w * y0 + (x - 0) );
-					let v10 = *screen_u8x4.add( w * y0 + (x - 1) );
-					let dst = v00 - v10;
+					let dst = *s00.add( x ) - *s10.add( x );
 					u8x4::write_to_slice_unaligned_unchecked( shuffle!( dst, [2, 1, 0, 3] ), &mut self.buffer[buffer_index..] );
 					buffer_index += 3;
 				}
 			}
 			for y in y0 + 1 .. y1 {
-				let s00 = screen_u8x4.add( w * (y - 0) - 0 );
-				let s01 = screen_u8x4.add( w * (y - 1) - 0 );
-				let s10 = screen_u8x4.add( w * (y - 0) - 1 );
-				let s11 = screen_u8x4.add( w * (y - 1) - 1 );
+				let s00 = screen_u8x4.add( w * y - (0 + 0) );
+				let s01 = screen_u8x4.add( w * y - (w + 0) );
+				let s10 = screen_u8x4.add( w * y - (0 + 1) );
+				let s11 = screen_u8x4.add( w * y - (w + 1) );
 				/* x == x0 */ {
-					let v00 = *s00.add( x0 );
-					let v01 = *s01.add( x0 );
-					let dst = v00 - v01;
+					let dst = *s00.add( x0 ) - *s01.add( x0 );
 					u8x4::write_to_slice_unaligned_unchecked( shuffle!( dst, [2, 1, 0, 3] ), &mut self.buffer[buffer_index..] );
 					buffer_index += 3;
 				}
 				for x in x0 + 1 .. x1 {
-					let v00 = *s00.add( x );
-					let v01 = *s01.add( x );
-					let v10 = *s10.add( x );
-					let v11 = *s11.add( x );
-					let w01 = i16x4::from( v01 );
-					let w10 = i16x4::from( v10 );
-					let w11 = i16x4::from( v11 );
+					let w01 = i16x4::from( *s01.add( x ) );
+					let w10 = i16x4::from( *s10.add( x ) );
+					let w11 = i16x4::from( *s11.add( x ) );
 					let prd = (w01 + w10 - w11).max( i16x4::splat( 0 ) ).min( i16x4::splat( 255 ) );
-					let dst = v00 - u8x4::from_cast( prd );
+					let dst = *s00.add( x ) - u8x4::from_cast( prd );
 					u8x4::write_to_slice_unaligned_unchecked( shuffle!( dst, [2, 1, 0, 3] ), &mut self.buffer[buffer_index..] );
 					buffer_index += 3;
 				}

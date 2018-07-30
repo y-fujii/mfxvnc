@@ -12,7 +12,8 @@ use byteorder::{ ByteOrder, ReadBytesExt, WriteBytesExt, BigEndian };
 struct VncServer;
 
 impl VncServer {
-	const BSIZE: usize = 64;
+	const BSIZE_W: usize =  64;
+	const BSIZE_H: usize = 128;
 
 	fn listen<A: std::net::ToSocketAddrs>( addr: A ) -> io::Result<()> {
 		let listener = net::TcpListener::bind( addr )?;
@@ -72,7 +73,7 @@ impl VncServer {
 	}
 
 	fn write_loop( mut stream: net::TcpStream ) -> io::Result<()> {
-		let mut encoder = tight::TightEncoder::new( 2 * Self::BSIZE * Self::BSIZE );
+		let mut encoder = tight::TightEncoder::new( Self::BSIZE_W * Self::BSIZE_H );
 		let mut cap = scrap::Capturer::new( scrap::Display::primary()? )?;
 		let w = cap.width();
 		let h = cap.height();
@@ -148,9 +149,9 @@ impl VncServer {
 			let mut bx = 0;
 			while bx < w {
 				let mut upper = packed_simd::u64x2::new( bx as u64, by as u64 );
-				let mut lower = upper + Self::BSIZE as u64;
-				for y in by .. cmp::min( by + Self::BSIZE, h ) {
-					for x in bx .. cmp::min( bx + Self::BSIZE, w ) {
+				let mut lower = upper + packed_simd::u64x2::new( Self::BSIZE_W as u64, Self::BSIZE_H as u64 );
+				for y in by .. cmp::min( by + Self::BSIZE_H, h ) {
+					for x in bx .. cmp::min( bx + Self::BSIZE_W, w ) {
 						let p = unsafe { *(prev.as_ptr() as *const u32).add( w * y + x ) };
 						let q = unsafe { *(next.as_ptr() as *const u32).add( w * y + x ) } & 0x00ffffff;
 						if p != q {
@@ -176,9 +177,9 @@ impl VncServer {
 					//Self::encode_raw( &mut buf, &next, w, h, x0, y0, x1, y1 );
 					n_rects += 1;
 				}
-				bx += Self::BSIZE;
+				bx += Self::BSIZE_W;
 			}
-			by += Self::BSIZE;
+			by += Self::BSIZE_H;
 		}
 		Ok( n_rects )
 	}
@@ -191,9 +192,11 @@ impl VncServer {
 			let mut y = 0;
 			while y < h {
 				'exit: while y < h {
-					for x in bx .. cmp::min( bx + Self::BSIZE, w ) {
-						let p = unsafe { *(prev.as_ptr() as *const u32).add( w * y + x ) };
-						let q = unsafe { *(next.as_ptr() as *const u32).add( w * y + x ) } & 0x00ffffff;
+					let s_prev = unsafe { (prev.as_ptr() as *const u32).add( w * y ) };
+					let s_next = unsafe { (next.as_ptr() as *const u32).add( w * y ) };
+					for x in bx .. cmp::min( bx + Self::BSIZE_W, w ) {
+						let p = unsafe { *s_prev.add( x ) };
+						let q = unsafe { *s_next.add( x ) } & 0x00ffffff;
 						if p != q {
 							break 'exit;
 						}
@@ -203,18 +206,20 @@ impl VncServer {
 				let y0 = y;
 
 				let mut n = 0;
-				let mut x0 = bx + Self::BSIZE;
+				let mut x0 = bx + Self::BSIZE_W;
 				let mut x1 = bx;
-				while y < cmp::min( y0 + 2 * Self::BSIZE, h ) {
+				while y < cmp::min( y0 + Self::BSIZE_H, h ) {
 					let mut unchanged = true;
-					for x in bx .. cmp::min( bx + Self::BSIZE, w ) {
-						let p = unsafe { *(prev.as_ptr() as *const u32).add( w * y + x ) };
-						let q = unsafe { *(next.as_ptr() as *const u32).add( w * y + x ) } & 0x00ffffff;
+					let s_prev = unsafe { (prev.as_ptr() as *mut   u32).add( w * y ) };
+					let s_next = unsafe { (next.as_ptr() as *const u32).add( w * y ) };
+					for x in bx .. cmp::min( bx + Self::BSIZE_W, w ) {
+						let p = unsafe { *s_prev.add( x ) };
+						let q = unsafe { *s_next.add( x ) } & 0x00ffffff;
 						if p != q {
 							unchanged = false;
 							x0 = cmp::min( x0, x );
 							x1 = cmp::max( x1, x + 1 );
-							unsafe { *(prev.as_mut_ptr() as *mut u32).add( w * y + x ) = q };
+							unsafe { *s_prev.add( x ) = q };
 						}
 					}
 					if unchanged {
@@ -240,7 +245,7 @@ impl VncServer {
 					n_rects += 1;
 				}
 			}
-			bx += Self::BSIZE;
+			bx += Self::BSIZE_W;
 		}
 		Ok( n_rects )
 	}
