@@ -11,7 +11,7 @@ pub struct TightEncoder {
 impl TightEncoder {
 	pub fn new( pixels: usize ) -> Self {
 		TightEncoder{
-			buffer: Vec::with_capacity( pixels * 3 ),
+			buffer: Vec::with_capacity( pixels * 3 + 1 ),
 			compressor: deflate::core::CompressorOxide::new( 1 | deflate::core::deflate_flags::TDEFL_GREEDY_PARSING_FLAG ),
 			first: true,
 		}
@@ -22,7 +22,7 @@ impl TightEncoder {
 		assert!( x0 < x1 && x1 <= w );
 		assert!( y0 < y1 && y1 <= h );
 		assert!( screen.len() == w * h * 4 );
-		assert!( self.buffer.capacity() >= (x1 - x0) * (y1 - y0) * 3 );
+		assert!( self.buffer.capacity() >= (x1 - x0) * (y1 - y0) * 3 + 1 );
 
 		/*
 		self.buffer.clear();
