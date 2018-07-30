@@ -1,4 +1,5 @@
-#![feature( stdsimd )]
+#[macro_use]
+extern crate packed_simd;
 extern crate byteorder;
 extern crate miniz_oxide;
 extern crate scrap;
@@ -146,14 +147,14 @@ impl VncServer {
 		while by < h {
 			let mut bx = 0;
 			while bx < w {
-				let mut upper = simd::u64x2::new( bx as u64, by as u64 );
+				let mut upper = packed_simd::u64x2::new( bx as u64, by as u64 );
 				let mut lower = upper + Self::BSIZE as u64;
 				for y in by .. cmp::min( by + Self::BSIZE, h ) {
 					for x in bx .. cmp::min( bx + Self::BSIZE, w ) {
 						let p = unsafe { *(prev.as_ptr() as *const u32).add( w * y + x ) };
 						let q = unsafe { *(next.as_ptr() as *const u32).add( w * y + x ) } & 0x00ffffff;
 						if p != q {
-							let xy = simd::u64x2::new( x as u64, y as u64 );
+							let xy = packed_simd::u64x2::new( x as u64, y as u64 );
 							lower = lower.min( xy );
 							upper = upper.max( xy + 1 );
 							unsafe { *(prev.as_mut_ptr() as *mut u32).add( w * y + x ) = q };
