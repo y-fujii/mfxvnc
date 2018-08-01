@@ -3,3 +3,9 @@
 WIP.
 
 mfxvnc aims to be a fast VNC server for X11 targeting 100+ Mb/s network environment.
+
+= Build
+
+----
+RUSTFLAGS="-C target-feature=+sse4.1" rustup run nightly cargo build --release
+----
