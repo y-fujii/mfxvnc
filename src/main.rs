@@ -10,12 +10,12 @@ use std::io::{ Read, Write };
 use byteorder::{ ByteOrder, ReadBytesExt, WriteBytesExt, BigEndian };
 
 
-struct VncServer<Comparator: comparator::Comparator<Encoder>, Encoder: encoder::Encoder> {
-	phantom_comparator: marker::PhantomData<Comparator>,
-	phantom_encoder: marker::PhantomData<Encoder>,
+struct VncServer<Comparator: comparator::Comparator, Encoder: encoder::Encoder> {
+	_comparator: marker::PhantomData<Comparator>,
+	_encoder: marker::PhantomData<Encoder>,
 }
 
-impl<Comparator: comparator::Comparator<Encoder>, Encoder: encoder::Encoder> VncServer<Comparator, Encoder> {
+impl<Comparator: comparator::Comparator, Encoder: encoder::Encoder> VncServer<Comparator, Encoder> {
 	fn listen<A: net::ToSocketAddrs>( addr: A ) -> io::Result<()> {
 		let listener = net::TcpListener::bind( addr )?;
 		for stream in listener.incoming() {
@@ -74,7 +74,7 @@ impl<Comparator: comparator::Comparator<Encoder>, Encoder: encoder::Encoder> Vnc
 	}
 
 	fn write_loop( mut stream: net::TcpStream ) -> io::Result<()> {
-		let mut encoder = Encoder::new( Comparator::BSIZE_W * Comparator::BSIZE_H );
+		let mut encoder = Encoder::new( Comparator::BSIZE_W, Comparator::BSIZE_H );
 		let mut cap = scrap::Capturer::new( scrap::Display::primary()? )?;
 		let w = cap.width();
 		let h = cap.height();
@@ -124,7 +124,15 @@ impl<Comparator: comparator::Comparator<Encoder>, Encoder: encoder::Encoder> Vnc
 
 			// search & encode update region.
 			let timer = time::SystemTime::now();
-			let n_rects = Comparator::update( &mut buf, &mut encoder, &mut screen_prev, &screen_next, w, h )?;
+			let mut n_rects = 0;
+			Comparator::compare( &mut screen_prev, &screen_next, w, h, |x0, y0, x1, y1| {
+				buf.write_u16::<BigEndian>( x0 as u16 ).unwrap();
+				buf.write_u16::<BigEndian>( y0 as u16 ).unwrap();
+				buf.write_u16::<BigEndian>( (x1 - x0) as u16 ).unwrap();
+				buf.write_u16::<BigEndian>( (y1 - y0) as u16 ).unwrap();
+				encoder.encode( &mut buf, &screen_next, w, h, x0, y0, x1, y1 );
+				n_rects += 1;
+			} );
 			let elapsed = timer.elapsed().unwrap();
 			eprintln!( "encode: {:>3} ms, {:>4} KiB.",
 				elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1000000,
@@ -144,8 +152,8 @@ impl<Comparator: comparator::Comparator<Encoder>, Encoder: encoder::Encoder> Vnc
 }
 
 fn main() -> Result<(), Box<error::Error>> {
-	//VncServer::<comparator::StripComparator<encoder::TightAdaptiveEncoder>, encoder::TightAdaptiveEncoder>::listen( "0.0.0.0:5900" )?;
-	VncServer::<comparator::StripComparator<encoder::TightGradientEncoder>, encoder::TightGradientEncoder>::listen( "0.0.0.0:5900" )?;
-	//VncServer::<comparator::StripComparator<encoder::TightRawEncoder>, encoder::TightRawEncoder>::listen( "0.0.0.0:5900" )?;
+	//VncServer::<comparator::StripComparator, encoder::TightAdaptiveEncoder>::listen( "0.0.0.0:5900" )?;
+	VncServer::<comparator::StripComparator, encoder::TightGradientEncoder>::listen( "0.0.0.0:5900" )?;
+	//VncServer::<comparator::StripComparator, encoder::TightRawEncoder>::listen( "0.0.0.0:5900" )?;
 	Ok( () )
 }

@@ -1,25 +1,20 @@
 use std::*;
-use byteorder::{ WriteBytesExt, BigEndian };
 use packed_simd;
-use encoder;
 
 
-pub trait Comparator<Encoder: encoder::Encoder> {
+pub trait Comparator {
 	const BSIZE_W: usize;
 	const BSIZE_H: usize;
-	fn update( &mut Vec<u8>, &mut Encoder, &mut [u8], &[u8], usize, usize ) -> io::Result<u16>;
+	fn compare<F: FnMut( usize, usize, usize, usize )>( &mut [u8], &[u8], usize, usize, F );
 }
 
-pub struct BlockComparator<Encoder: encoder::Encoder> {
-	phantom: marker::PhantomData<Encoder>,
-}
+pub struct BlockComparator;
 
-impl<Encoder: encoder::Encoder> Comparator<Encoder> for BlockComparator<Encoder> {
+impl Comparator for BlockComparator {
 	const BSIZE_W: usize = 64;
 	const BSIZE_H: usize = 64;
 
-	fn update( out: &mut Vec<u8>, encoder: &mut Encoder, prev: &mut [u8], next: &[u8], w: usize, h: usize ) -> io::Result<u16> {
-		let mut n_rects = 0;
+	fn compare<F: FnMut( usize, usize, usize, usize )>( prev: &mut [u8], next: &[u8], w: usize, h: usize, mut callback: F ) {
 		let mut by = 0;
 		while by < h {
 			let mut bx = 0;
@@ -43,32 +38,22 @@ impl<Encoder: encoder::Encoder> Comparator<Encoder> for BlockComparator<Encoder>
 					let y0 = lower.extract( 1 ) as usize;
 					let x1 = upper.extract( 0 ) as usize;
 					let y1 = upper.extract( 1 ) as usize;
-					out.write_u16::<BigEndian>( x0 as u16 )?;
-					out.write_u16::<BigEndian>( y0 as u16 )?;
-					out.write_u16::<BigEndian>( (x1 - x0) as u16 )?;
-					out.write_u16::<BigEndian>( (y1 - y0) as u16 )?;
-					out.write_u32::<BigEndian>( Encoder::ID )?;
-					encoder.encode( out, next, w, h, x0, y0, x1, y1 );
-					n_rects += 1;
+					callback( x0, y0, x1, y1 );
 				}
 				bx += Self::BSIZE_W;
 			}
 			by += Self::BSIZE_H;
 		}
-		Ok( n_rects )
 	}
 }
 
-pub struct StripComparator<Encoder: encoder::Encoder> {
-	phantom: marker::PhantomData<Encoder>,
-}
+pub struct StripComparator;
 
-impl<Encoder: encoder::Encoder> Comparator<Encoder> for StripComparator<Encoder> {
+impl Comparator for StripComparator {
 	const BSIZE_W: usize =  64;
 	const BSIZE_H: usize = 128;
 
-	fn update( out: &mut Vec<u8>, encoder: &mut Encoder, prev: &mut [u8], next: &[u8], w: usize, h: usize ) -> io::Result<u16> {
-		let mut n_rects = 0;
+	fn compare<F: FnMut( usize, usize, usize, usize )>( prev: &mut [u8], next: &[u8], w: usize, h: usize, mut callback: F ) {
 		let mut bx = 0;
 		while bx < w {
 			let mut y = 0;
@@ -118,17 +103,10 @@ impl<Encoder: encoder::Encoder> Comparator<Encoder> for StripComparator<Encoder>
 				let y1 = y - n;
 
 				if y0 < y1 {
-					out.write_u16::<BigEndian>( x0 as u16 )?;
-					out.write_u16::<BigEndian>( y0 as u16 )?;
-					out.write_u16::<BigEndian>( (x1 - x0) as u16 )?;
-					out.write_u16::<BigEndian>( (y1 - y0) as u16 )?;
-					out.write_u32::<BigEndian>( Encoder::ID )?;
-					encoder.encode( out, next, w, h, x0, y0, x1, y1 );
-					n_rects += 1;
+					callback( x0, y0, x1, y1 );
 				}
 			}
 			bx += Self::BSIZE_W;
 		}
-		Ok( n_rects )
 	}
 }

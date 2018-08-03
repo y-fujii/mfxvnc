@@ -4,21 +4,19 @@ use packed_simd::{ u8x4, i8x4, i16x4, i32x4, FromCast, FromBits };
 
 
 pub trait Encoder {
-	const ID: u32;
-	fn new( usize ) -> Self;
+	fn new( usize, usize ) -> Self;
 	fn encode( &mut self, &mut Vec<u8>, &[u8], usize, usize, usize, usize, usize, usize );
 }
 
 pub struct RawEncoder;
 
 impl Encoder for RawEncoder {
-	const ID: u32 = 0;
-
-	fn new( _: usize ) -> Self {
+	fn new( _: usize, _: usize ) -> Self {
 		RawEncoder
 	}
 
 	fn encode( &mut self, out: &mut Vec<u8>, screen: &[u8], w: usize, _h: usize, x0: usize, y0: usize, x1: usize, y1: usize ) {
+		out.extend( &[ 0, 0, 0, 0 ] ); // encoding type.
 		let size = (x1 - x0) * (y1 - y0) * 4;
 		out.reserve( size );
 		unsafe {
@@ -41,8 +39,6 @@ pub struct TightCompressor {
 }
 
 impl TightCompressor {
-	const ID: u32 = 7;
-
 	pub fn new() -> Self {
 		TightCompressor{
 			compressor: deflate::core::CompressorOxide::new( 1 | deflate::core::deflate_flags::TDEFL_GREEDY_PARSING_FLAG ),
@@ -51,22 +47,22 @@ impl TightCompressor {
 	}
 
 	pub fn compress( &mut self, src: &[u8], out: &mut Vec<u8>, stream: u8, filter: u8 ) {
-		out.push( 0b0100_0000 | (stream << 4) ); // compression control.
-		out.push( filter ); // filter type: gradient.
+		out.extend( &[
+			0, 0, 0, 7, // encoding type.
+			0b0100_0000 | (stream << 4), // compression control.
+			filter, // filter type: gradient.
+		] );
 
 		if src.len() < 12 {
 			out.extend_from_slice( src );
 		}
 		else {
 			let len_index = out.len();
-			out.push( 0 );
-			out.push( 0 );
-			out.push( 0 );
+			out.extend( &[ 0, 0, 0 ] );
 
 			let zlib_index = out.len();
 			if self.first {
-				out.push( 0x78 );
-				out.push( 0x01 );
+				out.extend( &[ 0x78, 0x01 ] );
 				self.first = false;
 			}
 
@@ -93,11 +89,9 @@ pub struct TightRawEncoder {
 }
 
 impl Encoder for TightRawEncoder {
-	const ID: u32 = 7;
-
-	fn new( pixels: usize ) -> Self {
+	fn new( w: usize, h: usize ) -> Self {
 		TightRawEncoder{
-			buffer: Vec::with_capacity( pixels * 3 + 1 ),
+			buffer: Vec::with_capacity( 3 * w * h + 1 ),
 			compressor: TightCompressor::new(),
 		}
 	}
@@ -134,11 +128,9 @@ pub struct TightGradientEncoder {
 }
 
 impl Encoder for TightGradientEncoder {
-	const ID: u32 = 7;
-
-	fn new( pixels: usize ) -> Self {
+	fn new( w: usize, h: usize ) -> Self {
 		TightGradientEncoder{
-			buffer: Vec::with_capacity( pixels * 3 + 1 ),
+			buffer: Vec::with_capacity( 3 * w * h + 1 ),
 			compressor: TightCompressor::new(),
 		}
 	}
@@ -201,12 +193,10 @@ pub struct TightAdaptiveEncoder {
 }
 
 impl Encoder for TightAdaptiveEncoder {
-	const ID: u32 = 7;
-
-	fn new( pixels: usize ) -> Self {
+	fn new( w: usize, h: usize ) -> Self {
 		TightAdaptiveEncoder{
-			buffer_raw: Vec::with_capacity( pixels * 3 + 1 ),
-			buffer_lin: Vec::with_capacity( pixels * 3 + 1 ),
+			buffer_raw: Vec::with_capacity( 3 * w * h + 1 ),
+			buffer_lin: Vec::with_capacity( 3 * w * h + 1 ),
 			compressor_raw: TightCompressor::new(),
 			compressor_lin: TightCompressor::new(),
 		}
