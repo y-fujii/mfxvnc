@@ -110,7 +110,7 @@ impl<Comparator: comparator::Comparator, Encoder: encoder::Encoder> VncServer<Co
 						return Err( err.into() );
 					},
 			};
-			assert!( screen_next.len() == w * h * 4 );
+			let stride = screen_next.len() / (4 * h);
 
 			// framebuffer update header.
 			buf.write_u8( 0 )?; // message type: framebuffer update.
@@ -121,12 +121,12 @@ impl<Comparator: comparator::Comparator, Encoder: encoder::Encoder> VncServer<Co
 			// search & encode update region.
 			let timer = time::SystemTime::now();
 			let mut n_rects = 0;
-			Comparator::compare( &mut screen_prev, &screen_next, w, h, |x0, y0, x1, y1| {
+			Comparator::compare( &mut screen_prev, &screen_next, stride, w, h, |x0, y0, x1, y1| {
 				buf.write_u16::<BigEndian>( x0 as u16 ).unwrap();
 				buf.write_u16::<BigEndian>( y0 as u16 ).unwrap();
 				buf.write_u16::<BigEndian>( (x1 - x0) as u16 ).unwrap();
 				buf.write_u16::<BigEndian>( (y1 - y0) as u16 ).unwrap();
-				encoder.encode( &mut buf, &screen_next, w, h, x0, y0, x1, y1 );
+				encoder.encode( &mut buf, &screen_next, stride, x0, y0, x1, y1 );
 				n_rects += 1;
 			} );
 			let elapsed = timer.elapsed().unwrap();

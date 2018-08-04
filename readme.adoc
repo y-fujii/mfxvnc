@@ -2,7 +2,7 @@
 
 WIP.
 
-mfxvnc aims to be a fast VNC server for X11 targeting 100+ Mb/s network environment.
+mfxvnc aims to be a fast lossless VNC server.
 
 == Build
 
