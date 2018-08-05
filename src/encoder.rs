@@ -16,7 +16,7 @@ impl Encoder for RawEncoder {
 	}
 
 	fn encode( &mut self, out: &mut Vec<u8>, screen: &[u8], stride: usize, x0: usize, y0: usize, x1: usize, y1: usize ) {
-		out.extend( &[ 0, 0, 0, 0 ] ); // encoding type.
+		out.extend( &[ 0, 0, 0, 0 ] ); // encoding type: RAW.
 		let size = (x1 - x0) * (y1 - y0) * 4;
 		out.reserve( size );
 		unsafe {
@@ -48,7 +48,7 @@ impl TightCompressor {
 
 	pub fn compress( &mut self, src: &[u8], out: &mut Vec<u8>, stream: u8, filter: u8 ) {
 		out.extend( &[
-			0, 0, 0, 7, // encoding type.
+			0, 0, 0, 7, // encoding type: Tight.
 			0b0100_0000 | (stream << 4), // compression control.
 			filter, // filter type: gradient.
 		] );
@@ -289,3 +289,66 @@ impl Encoder for TightAdaptiveEncoder {
 		}
 	}
 }
+
+#[link( name = "turbojpeg" )]
+extern "C" {
+	fn tjInitCompress() -> *mut os::raw::c_void;
+	fn tjDestroy( _: *mut os::raw::c_void ) -> i32;
+	fn tjCompress2( _: *mut os::raw::c_void, _: *const u8, _: i32, _: i32, _: i32, _: i32, _: *const *mut u8, _: *mut usize, _: i32, _: i32, _: i32 ) -> i32;
+}
+
+pub struct TightJpegEncoder {
+	tj_handle: *mut os::raw::c_void,
+}
+
+impl Drop for TightJpegEncoder {
+	fn drop( &mut self ) {
+		unsafe { tjDestroy( self.tj_handle ) };
+	}
+}
+
+/*
+impl Encoder for TightJpegEncoder {
+	fn new( _: usize, _: usize ) -> Self {
+		let handle = unsafe { tjInitCompress() };
+		assert!( !handle.is_null() );
+		TightJpegEncoder{
+			tj_handle: handle,
+		}
+	}
+
+	fn encode( &mut self, out: &mut Vec<u8>, screen: &[u8], stride: usize, x0: usize, y0: usize, x1: usize, y1: usize ) {
+		out.extend( &[
+			0, 0, 0, 7, // encoding type: Tight.
+			0b1001_0000, // compression control: JPEG.
+		] );
+
+		let len_index = out.len();
+		out.extend( &[ 0, 0, 0 ] );
+
+		let jpeg_index = out.len();
+		let mut jpeg_len = 0;
+		unsafe {
+			tjCompress2(
+				self.tj_handle,
+				screen.as_ptr().add( 4 * (stride * y0 + x0) ),
+				(x1 - x0) as i32,
+				(4 * stride) as i32,
+				(y1 - y0) as i32,
+				3, // TJPF_BGRX.
+				&out.as_mut_ptr().add( jpeg_index ),
+				&mut jpeg_len,
+				0, // TJSAMP_444.
+				92,
+				1024, // TJFLAG_NOREALLOC.
+			);
+			out.set_len( jpeg_index + jpeg_len );
+		}
+
+		assert!( jpeg_len < 1 << 22 );
+		out[len_index + 0] = 0x80 | ( jpeg_len        & 0x7f) as u8;
+		out[len_index + 1] = 0x80 | ((jpeg_len >>  7) & 0x7f) as u8;
+		out[len_index + 2] =         (jpeg_len >> 14)         as u8;
+	}
+}
+*/

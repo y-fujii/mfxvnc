@@ -13,5 +13,6 @@ fn main() -> Result<(), Box<error::Error>> {
 	//server::VncServer::<comparator::StripComparator, encoder::TightAdaptiveEncoder>::listen( "0.0.0.0:5900" )?;
 	server::VncServer::<comparator::StripComparator, encoder::TightGradientEncoder>::listen( "0.0.0.0:5900" )?;
 	//server::VncServer::<comparator::StripComparator, encoder::TightRawEncoder>::listen( "0.0.0.0:5900" )?;
+	//server::VncServer::<comparator::StripComparator, encoder::TightJpegEncoder>::listen( "0.0.0.0:5900" )?;
 	Ok( () )
 }
