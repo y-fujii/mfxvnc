@@ -290,6 +290,7 @@ impl Encoder for TightAdaptiveEncoder {
 	}
 }
 
+/*
 #[link( name = "turbojpeg" )]
 extern "C" {
 	fn tjInitCompress() -> *mut os::raw::c_void;
@@ -307,7 +308,6 @@ impl Drop for TightJpegEncoder {
 	}
 }
 
-/*
 impl Encoder for TightJpegEncoder {
 	fn new( _: usize, _: usize ) -> Self {
 		let handle = unsafe { tjInitCompress() };
