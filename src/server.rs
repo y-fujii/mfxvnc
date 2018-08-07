@@ -126,7 +126,8 @@ impl<Comparator: comparator::Comparator, Encoder: encoder::Encoder> VncServer<Co
 				buf.write_u16::<BigEndian>( y0 as u16 ).unwrap();
 				buf.write_u16::<BigEndian>( (x1 - x0) as u16 ).unwrap();
 				buf.write_u16::<BigEndian>( (y1 - y0) as u16 ).unwrap();
-				encoder.encode( &mut buf, &screen_next, stride, x0, y0, x1, y1 );
+				let ptr = unsafe { (screen_next.as_ptr() as *const u32).add( stride * y0 + x0 ) };
+				encoder.encode( &mut buf, ptr, stride, x1 - x0, y1 - y0 );
 				n_rects += 1;
 			} );
 			let elapsed = timer.elapsed().unwrap();
