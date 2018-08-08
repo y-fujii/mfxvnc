@@ -133,38 +133,32 @@ impl Encoder for TightGradientEncoder {
 			let screen = screen as *const u8x4;
 			self.buffer.set_len( w * h * 3 );
 			let mut buffer_index = 0;
+			let s00 = screen;
+			let s01 = screen.sub( stride );
 			/* y == y0 */ {
-				let s00 = screen.offset(  0 );
-				let s10 = screen.offset( -1 );
-				/* x == x0 */ {
-					let dst = *s00.add( 0 );
+				let mut v10 = u8x4::splat( 0 );
+				for x in 0 .. w {
+					let v00 = *s00.add( x );
+					let dst = v00 - v10;
 					u8x4::write_to_slice_unaligned_unchecked( shuffle!( dst, [2, 1, 0, 3] ), &mut self.buffer[buffer_index..] );
 					buffer_index += 3;
-				}
-				for x in 1 .. w {
-					let dst = *s00.add( x ) - *s10.add( x );
-					u8x4::write_to_slice_unaligned_unchecked( shuffle!( dst, [2, 1, 0, 3] ), &mut self.buffer[buffer_index..] );
-					buffer_index += 3;
+					v10 = v00;
 				}
 			}
-			for y in 1 .. h {
-				let s00 = screen.add( stride * y ).sub(          0 );
-				let s01 = screen.add( stride * y ).sub( stride + 0 );
-				let s10 = screen.add( stride * y ).sub(          1 );
-				let s11 = screen.add( stride * y ).sub( stride + 1 );
-				/* x == x0 */ {
-					let dst = *s00.add( 0 ) - *s01.add( 0 );
+			for sy in (stride .. stride * h).step_by( stride ) {
+				let s00 = s00.add( sy );
+				let s01 = s01.add( sy );
+				let mut dwy = i16x4::splat( 0 );
+				for x in 0 .. w {
+					let v00 = *s00.add( x );
+					let v01 = *s01.add( x );
+					let w00 = i16x4::from( v00 );
+					let w01 = i16x4::from( v01 );
+					let prd = (w01 + dwy).max( i16x4::splat( 0 ) ).min( i16x4::splat( 255 ) );
+					let dst = v00 - u8x4::from_cast( prd );
 					u8x4::write_to_slice_unaligned_unchecked( shuffle!( dst, [2, 1, 0, 3] ), &mut self.buffer[buffer_index..] );
 					buffer_index += 3;
-				}
-				for x in 1 .. w {
-					let w01 = i16x4::from( *s01.add( x ) );
-					let w10 = i16x4::from( *s10.add( x ) );
-					let w11 = i16x4::from( *s11.add( x ) );
-					let prd = (w01 + w10 - w11).max( i16x4::splat( 0 ) ).min( i16x4::splat( 255 ) );
-					let dst = *s00.add( x ) - u8x4::from_cast( prd );
-					u8x4::write_to_slice_unaligned_unchecked( shuffle!( dst, [2, 1, 0, 3] ), &mut self.buffer[buffer_index..] );
-					buffer_index += 3;
+					dwy = w00 - w01;
 				}
 			}
 		}
@@ -199,9 +193,11 @@ impl Encoder for TightAdaptiveEncoder {
 			self.buffer_raw.set_len( 3 * n_pixels );
 			self.buffer_lin.set_len( 3 * n_pixels );
 			let mut buffer_index = 0;
+			let s00 = screen.sub(          0 );
+			let s01 = screen.sub( stride + 0 );
+			let s10 = screen.sub(          1 );
+			let s11 = screen.sub( stride + 1 );
 			/* y == y0 */ {
-				let s00 = screen.offset(  0 );
-				let s10 = screen.offset( -1 );
 				/* x == x0 */ {
 					let v00 = *s00.add( 0 );
 					let dst = v00;
@@ -227,10 +223,10 @@ impl Encoder for TightAdaptiveEncoder {
 				}
 			}
 			for y in 1 .. h {
-				let s00 = screen.add( stride * y ).sub(          0 );
-				let s01 = screen.add( stride * y ).sub( stride + 0 );
-				let s10 = screen.add( stride * y ).sub(          1 );
-				let s11 = screen.add( stride * y ).sub( stride + 1 );
+				let s00 = s00.add( stride * y );
+				let s01 = s01.add( stride * y );
+				let s10 = s10.add( stride * y );
+				let s11 = s11.add( stride * y );
 				/* x == x0 */ {
 					let v00 = *s00.add( 0 );
 					let v01 = *s01.add( 0 );
