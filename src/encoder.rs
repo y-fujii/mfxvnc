@@ -1,26 +1,45 @@
 use std::*;
+use rand;
 use miniz_oxide::deflate;
 use packed_simd::{ u8x4, i8x4, i16x4, i32x4, FromCast, FromBits };
 
 
 pub trait Encoder {
-	fn new( usize, usize ) -> Self;
-	fn encode( &mut self, &mut Vec<u8>, *const u32, usize, usize, usize );
+	fn new() -> Self;
+	fn encode( &mut self, &mut Vec<u8>, &[u32], usize, usize, usize );
+}
+
+pub struct RandomColorEncoder;
+
+impl Encoder for RandomColorEncoder {
+	fn new() -> Self {
+		RandomColorEncoder
+	}
+
+	fn encode( &mut self, out: &mut Vec<u8>, _: &[u32], _: usize, _: usize, _: usize ) {
+		out.extend( &[
+			0, 0, 0, 7, // encoding type: Tight.
+			0b1000_0000, // compression control: fill.
+			rand::random::<u8>(),
+			rand::random::<u8>(),
+			rand::random::<u8>(),
+		] );
+	}
 }
 
 pub struct RawEncoder;
 
 impl Encoder for RawEncoder {
-	fn new( _: usize, _: usize ) -> Self {
+	fn new() -> Self {
 		RawEncoder
 	}
 
-	fn encode( &mut self, out: &mut Vec<u8>, screen: *const u32, stride: usize, w: usize, h: usize ) {
+	fn encode( &mut self, out: &mut Vec<u8>, screen: &[u32], stride: usize, w: usize, h: usize ) {
 		out.extend( &[ 0, 0, 0, 0 ] ); // encoding type: RAW.
-		let size = w * h * 4;
+		let size = 4 * w * h;
 		out.reserve( size );
 		unsafe {
-			let mut src_u32 = screen;
+			let mut src_u32 = screen.as_ptr();
 			let mut dst_u32 = out.as_mut_ptr().add( out.len() ) as *mut u32;
 			for _ in 0 .. h {
 				ptr::copy_nonoverlapping( src_u32, dst_u32, w );
@@ -89,29 +108,34 @@ pub struct TightRawEncoder {
 }
 
 impl Encoder for TightRawEncoder {
-	fn new( w: usize, h: usize ) -> Self {
+	fn new() -> Self {
 		TightRawEncoder{
-			buffer: Vec::with_capacity( 3 * w * h + 1 ),
+			buffer: Vec::new(),
 			compressor: TightCompressor::new(),
 		}
 	}
 
-	fn encode( &mut self, out: &mut Vec<u8>, screen: *const u32, stride: usize, w: usize, h: usize ) {
+	fn encode( &mut self, out: &mut Vec<u8>, screen: &[u32], stride: usize, w: usize, h: usize ) {
+		let len = 3 * w * h;
+		if self.buffer.capacity() < len + 1 {
+			self.buffer = Vec::with_capacity( len + 1 );
+		}
+
+		let screen = screen.as_ptr() as *const u8x4;
 		unsafe {
-			let screen = screen as *const u8x4;
-			self.buffer.set_len( w * h * 3 );
-			let mut buffer_index = 0;
-			for y in 0 .. h {
-				let s00 = screen.add( stride * y );
+			self.buffer.set_len( len );
+			let mut buffer = self.buffer.as_mut_ptr();
+			for sy in (0 .. stride * h).step_by( stride ) {
+				let s00 = screen.add( sy );
 				for x in 0 .. w {
 					let dst = *s00.add( x );
-					u8x4::write_to_slice_unaligned_unchecked( shuffle!( dst, [2, 1, 0, 3] ), &mut self.buffer[buffer_index..] );
-					buffer_index += 3;
+					ptr::write_unaligned( buffer as *mut u8x4, shuffle!( dst, [2, 1, 0, 3] ) );
+					buffer = buffer.add( 3 );
 				}
 			}
 		}
 
-		self.compressor.compress( &mut self.buffer, out, 0, 0 );
+		self.compressor.compress( &self.buffer, out, 0, 0 );
 	}
 }
 
@@ -121,18 +145,23 @@ pub struct TightGradientEncoder {
 }
 
 impl Encoder for TightGradientEncoder {
-	fn new( w: usize, h: usize ) -> Self {
+	fn new() -> Self {
 		TightGradientEncoder{
-			buffer: Vec::with_capacity( 3 * w * h + 1 ),
+			buffer: Vec::new(),
 			compressor: TightCompressor::new(),
 		}
 	}
 
-	fn encode( &mut self, out: &mut Vec<u8>, screen: *const u32, stride: usize, w: usize, h: usize ) {
+	fn encode( &mut self, out: &mut Vec<u8>, screen: &[u32], stride: usize, w: usize, h: usize ) {
+		let len = 3 * w * h;
+		if self.buffer.capacity() < len + 1 {
+			self.buffer = Vec::with_capacity( len + 1 );
+		}
+
+		let screen = screen.as_ptr() as *const u8x4;
 		unsafe {
-			let screen = screen as *const u8x4;
-			self.buffer.set_len( w * h * 3 );
-			let mut buffer_index = 0;
+			self.buffer.set_len( len );
+			let mut buffer = self.buffer.as_mut_ptr();
 			let s00 = screen;
 			let s01 = screen.sub( stride );
 			/* y == y0 */ {
@@ -140,8 +169,8 @@ impl Encoder for TightGradientEncoder {
 				for x in 0 .. w {
 					let v00 = *s00.add( x );
 					let dst = v00 - v10;
-					u8x4::write_to_slice_unaligned_unchecked( shuffle!( dst, [2, 1, 0, 3] ), &mut self.buffer[buffer_index..] );
-					buffer_index += 3;
+					ptr::write_unaligned( buffer as *mut u8x4, shuffle!( dst, [2, 1, 0, 3] ) );
+					buffer = buffer.add( 3 );
 					v10 = v00;
 				}
 			}
@@ -156,8 +185,8 @@ impl Encoder for TightGradientEncoder {
 					let w01 = i16x4::from( v01 );
 					let prd = (w01 + dwy).max( i16x4::splat( 0 ) ).min( i16x4::splat( 255 ) );
 					let dst = v00 - u8x4::from_cast( prd );
-					u8x4::write_to_slice_unaligned_unchecked( shuffle!( dst, [2, 1, 0, 3] ), &mut self.buffer[buffer_index..] );
-					buffer_index += 3;
+					ptr::write_unaligned( buffer as *mut u8x4, shuffle!( dst, [2, 1, 0, 3] ) );
+					buffer = buffer.add( 3 );
 					dwy = w00 - w01;
 				}
 			}
@@ -175,97 +204,87 @@ pub struct TightAdaptiveEncoder {
 }
 
 impl Encoder for TightAdaptiveEncoder {
-	fn new( w: usize, h: usize ) -> Self {
+	fn new() -> Self {
 		TightAdaptiveEncoder{
-			buffer_raw: Vec::with_capacity( 3 * w * h + 1 ),
-			buffer_lin: Vec::with_capacity( 3 * w * h + 1 ),
+			buffer_raw: Vec::new(),
+			buffer_lin: Vec::new(),
 			compressor_raw: TightCompressor::new(),
 			compressor_lin: TightCompressor::new(),
 		}
 	}
 
-	fn encode( &mut self, out: &mut Vec<u8>, screen: *const u32, stride: usize, w: usize, h: usize ) {
-		let n_pixels = w * h;
+	fn encode( &mut self, out: &mut Vec<u8>, screen: &[u32], stride: usize, w: usize, h: usize ) {
+		let len = 3 * w * h;
+		if self.buffer_raw.capacity() < len + 1 {
+			self.buffer_raw = Vec::with_capacity( len + 1 );
+		}
+		if self.buffer_lin.capacity() < len + 1 {
+			self.buffer_lin = Vec::with_capacity( len + 1 );
+		}
+
+		let screen = screen.as_ptr() as *const u8x4;
 		let mut sum_l1 = i32x4::splat( 0 );
 		let mut n_matches = 0;
 		unsafe {
-			let screen = screen as *const u8x4;
-			self.buffer_raw.set_len( 3 * n_pixels );
-			self.buffer_lin.set_len( 3 * n_pixels );
-			let mut buffer_index = 0;
-			let s00 = screen.sub(          0 );
-			let s01 = screen.sub( stride + 0 );
-			let s10 = screen.sub(          1 );
-			let s11 = screen.sub( stride + 1 );
-			/* y == y0 */ {
-				/* x == x0 */ {
-					let v00 = *s00.add( 0 );
-					let dst = v00;
+			self.buffer_raw.set_len( len );
+			self.buffer_lin.set_len( len );
+			let mut buffer_raw = self.buffer_raw.as_mut_ptr();
+			let mut buffer_lin = self.buffer_lin.as_mut_ptr();
+			let s00 = screen;
+			let s01 = screen.sub( stride );
 
-					u8x4::write_to_slice_unaligned_unchecked( shuffle!( v00, [2, 1, 0, 3] ), &mut self.buffer_raw[buffer_index..] );
-					u8x4::write_to_slice_unaligned_unchecked( shuffle!( dst, [2, 1, 0, 3] ), &mut self.buffer_lin[buffer_index..] );
-					buffer_index += 3;
-				}
-				for x in 1 .. w {
+			/* y == y0 */ {
+				let mut v10 = u8x4::splat( 0 );
+				for x in 0 .. w {
 					let v00 = *s00.add( x );
-					let v10 = *s10.add( x );
 					let dst = v00 - v10;
 
-					u8x4::write_to_slice_unaligned_unchecked( shuffle!( v00, [2, 1, 0, 3] ), &mut self.buffer_raw[buffer_index..] );
-					u8x4::write_to_slice_unaligned_unchecked( shuffle!( dst, [2, 1, 0, 3] ), &mut self.buffer_lin[buffer_index..] );
-					buffer_index += 3;
+					ptr::write_unaligned( buffer_raw as *mut u8x4, shuffle!( v00, [2, 1, 0, 3] ) );
+					ptr::write_unaligned( buffer_lin as *mut u8x4, shuffle!( dst, [2, 1, 0, 3] ) );
+					buffer_raw = buffer_raw.add( 3 );
+					buffer_lin = buffer_lin.add( 3 );
 
 					let idst = i8x4::from_bits( dst );
 					sum_l1 += i32x4::from( i8x4::max( -idst, idst ) );
 					if v00 == v10 {
 						n_matches += 1;
 					}
+
+					v10 = v00;
 				}
 			}
-			for y in 1 .. h {
-				let s00 = s00.add( stride * y );
-				let s01 = s01.add( stride * y );
-				let s10 = s10.add( stride * y );
-				let s11 = s11.add( stride * y );
-				/* x == x0 */ {
-					let v00 = *s00.add( 0 );
-					let v01 = *s01.add( 0 );
-					let dst = v00 - v01;
 
-					u8x4::write_to_slice_unaligned_unchecked( shuffle!( v00, [2, 1, 0, 3] ), &mut self.buffer_raw[buffer_index..] );
-					u8x4::write_to_slice_unaligned_unchecked( shuffle!( dst, [2, 1, 0, 3] ), &mut self.buffer_lin[buffer_index..] );
-					buffer_index += 3;
-
-					let idst = i8x4::from_bits( dst );
-					sum_l1 += i32x4::from( i8x4::max( -idst, idst ) );
-					if v00 == v01 {
-						n_matches += 1;
-					}
-				}
-				for x in 1 .. w {
+			for sy in (stride .. stride * h).step_by( stride ) {
+				let s00 = s00.add( sy );
+				let s01 = s01.add( sy );
+				let mut w10 = i16x4::splat( 0 );
+				let mut w11 = i16x4::splat( 0 );
+				for x in 0 .. w {
 					let v00 = *s00.add( x );
 					let v01 = *s01.add( x );
-					let v10 = *s10.add( x );
-					let v11 = *s11.add( x );
+					let w00 = i16x4::from( v00 );
 					let w01 = i16x4::from( v01 );
-					let w10 = i16x4::from( v10 );
-					let w11 = i16x4::from( v11 );
 					let prd = (w01 + w10 - w11).max( i16x4::splat( 0 ) ).min( i16x4::splat( 255 ) );
 					let dst = v00 - u8x4::from_cast( prd );
 
-					u8x4::write_to_slice_unaligned_unchecked( shuffle!( v00, [2, 1, 0, 3] ), &mut self.buffer_raw[buffer_index..] );
-					u8x4::write_to_slice_unaligned_unchecked( shuffle!( dst, [2, 1, 0, 3] ), &mut self.buffer_lin[buffer_index..] );
-					buffer_index += 3;
+					ptr::write_unaligned( buffer_raw as *mut u8x4, shuffle!( v00, [2, 1, 0, 3] ) );
+					ptr::write_unaligned( buffer_lin as *mut u8x4, shuffle!( dst, [2, 1, 0, 3] ) );
+					buffer_raw = buffer_raw.add( 3 );
+					buffer_lin = buffer_lin.add( 3 );
 
 					let idst = i8x4::from_bits( dst );
 					sum_l1 += i32x4::from( i8x4::max( -idst, idst ) );
-					if v00 == v01 || v00 == v10 {
+					if w00 == w01 || w00 == w10 {
 						n_matches += 1;
 					}
+
+					w10 = w00;
+					w11 = w01;
 				}
 			}
 		}
 
+		let n_pixels = w * h;
 		let raw_ratio = (n_pixels - n_matches) as f64 / n_pixels as f64;
 		let m = sum_l1.extract( 0 ) as f64 + sum_l1.extract( 1 ) as f64 + sum_l1.extract( 2 ) as f64;
 		let lin_ratio = if m == 0.0 {
@@ -276,15 +295,14 @@ impl Encoder for TightAdaptiveEncoder {
 		};
 
 		if raw_ratio < lin_ratio {
-			self.compressor_raw.compress( &mut self.buffer_raw, out, 0, 0 );
+			self.compressor_raw.compress( &self.buffer_raw, out, 0, 0 );
 		}
 		else {
-			self.compressor_lin.compress( &mut self.buffer_lin, out, 1, 2 );
+			self.compressor_lin.compress( &self.buffer_lin, out, 1, 2 );
 		}
 	}
 }
 
-/*
 #[link( name = "turbojpeg" )]
 extern "C" {
 	fn tjInitCompress() -> *mut os::raw::c_void;
@@ -303,7 +321,7 @@ impl Drop for TightJpegEncoder {
 }
 
 impl Encoder for TightJpegEncoder {
-	fn new( _: usize, _: usize ) -> Self {
+	fn new() -> Self {
 		let handle = unsafe { tjInitCompress() };
 		assert!( !handle.is_null() );
 		TightJpegEncoder{
@@ -311,7 +329,7 @@ impl Encoder for TightJpegEncoder {
 		}
 	}
 
-	fn encode( &mut self, out: &mut Vec<u8>, screen: *const u32, stride: usize, w: usize, h: usize ) {
+	fn encode( &mut self, out: &mut Vec<u8>, screen: &[u32], stride: usize, w: usize, h: usize ) {
 		out.extend( &[
 			0, 0, 0, 7, // encoding type: Tight.
 			0b1001_0000, // compression control: JPEG.
@@ -325,7 +343,7 @@ impl Encoder for TightJpegEncoder {
 		unsafe {
 			tjCompress2(
 				self.tj_handle,
-				screen as *const u8,
+				screen.as_ptr() as *const u8,
 				w as i32,
 				(4 * stride) as i32,
 				h as i32,
@@ -333,7 +351,7 @@ impl Encoder for TightJpegEncoder {
 				&out.as_mut_ptr().add( jpeg_index ),
 				&mut jpeg_len,
 				0, // TJSAMP_444.
-				92,
+				93, // quality: 7-bit DC value.
 				1024, // TJFLAG_NOREALLOC.
 			);
 			out.set_len( jpeg_index + jpeg_len );
@@ -345,4 +363,3 @@ impl Encoder for TightJpegEncoder {
 		out[len_index + 2] =         (jpeg_len >> 14)         as u8;
 	}
 }
-*/

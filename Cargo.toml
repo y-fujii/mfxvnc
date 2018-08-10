@@ -6,6 +6,7 @@ authors = ["Yasuhiro Fujii <y-fujii@mimosa-pudica.net>"]
 [dependencies]
 packed_simd = { version = "*", features = ["into_bits"] }
 byteorder = "*"
+rand = "*"
 miniz_oxide = "*"
 scrap = "*"
 

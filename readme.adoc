@@ -2,10 +2,20 @@
 
 WIP.
 
-mfxvnc aims to be a fast lossless VNC server.
+mfxvnc aims to be a fast lossless/lossy VNC server.
 
 == Build
 
 ----
 RUSTFLAGS="-C target-feature=+sse4.1" rustup run nightly cargo build --release
+----
+
+== Configuration
+
+XXX
+
+Several experimental strategies are implemented.  You can test them by changing `src/main.rs`.
+
+----
+server::VncServer::<comparator::QuadtreeComparator, encoder::TightAdaptiveEncoder>::listen( "0.0.0.0:5900" )?;
 ----

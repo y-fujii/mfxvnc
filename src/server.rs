@@ -70,7 +70,7 @@ impl<Comparator: comparator::Comparator, Encoder: encoder::Encoder> VncServer<Co
 	}
 
 	fn write_loop( mut stream: net::TcpStream ) -> io::Result<()> {
-		let mut encoder = Encoder::new( Comparator::BSIZE_W, Comparator::BSIZE_H );
+		let mut encoder = Encoder::new();
 		let mut cap = scrap::Capturer::new( scrap::Display::primary()? )?;
 		let w = cap.width();
 		let h = cap.height();
@@ -97,7 +97,7 @@ impl<Comparator: comparator::Comparator, Encoder: encoder::Encoder> VncServer<Co
 			buf.clear();
 		}
 
-		let mut screen_prev = vec![ 0; w * h * 4 ];
+		let mut screen_prev = Vec::new();
 		loop {
 			// capture.
 			let screen_next = match cap.frame() {
@@ -110,7 +110,11 @@ impl<Comparator: comparator::Comparator, Encoder: encoder::Encoder> VncServer<Co
 						return Err( err.into() );
 					},
 			};
-			let stride = screen_next.len() / (4 * h);
+			let screen_next = unsafe { slice::from_raw_parts( screen_next.as_ptr() as *const u32, screen_next.len() / 4 ) };
+			if screen_next.len() != screen_prev.len() {
+				screen_prev = vec![ 0; screen_next.len() ];
+			}
+			let stride = screen_next.len() / h;
 
 			// framebuffer update header.
 			buf.write_u8( 0 )?; // message type: framebuffer update.
@@ -126,8 +130,7 @@ impl<Comparator: comparator::Comparator, Encoder: encoder::Encoder> VncServer<Co
 				buf.write_u16::<BigEndian>( y0 as u16 ).unwrap();
 				buf.write_u16::<BigEndian>( (x1 - x0) as u16 ).unwrap();
 				buf.write_u16::<BigEndian>( (y1 - y0) as u16 ).unwrap();
-				let ptr = unsafe { (screen_next.as_ptr() as *const u32).add( stride * y0 + x0 ) };
-				encoder.encode( &mut buf, ptr, stride, x1 - x0, y1 - y0 );
+				encoder.encode( &mut buf, &screen_next[stride * y0 + x0..], stride, x1 - x0, y1 - y0 );
 				n_rects += 1;
 			} );
 			let elapsed = timer.elapsed().unwrap();
