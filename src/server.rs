@@ -2,6 +2,7 @@ use std::*;
 use std::io::{ Read, Write };
 use byteorder::{ ByteOrder, ReadBytesExt, WriteBytesExt, BigEndian };
 use scrap;
+use libc;
 use comparator;
 use encoder;
 
@@ -94,27 +95,12 @@ impl<Comparator: comparator::Comparator, Encoder: encoder::Encoder> VncServer<Co
 			buf.write_u32::<BigEndian>( name.len() as u32 )?;
 			buf.write_all( name )?;
 			stream.write_all( &buf )?;
-			buf.clear();
 		}
 
-		let mut screen_prev = Vec::new();
+		let mut prev_screen = Vec::new();
 		loop {
-			// capture.
-			let screen_next = match cap.frame() {
-				Ok ( buf ) => buf,
-				Err( err ) =>
-					if err.kind() == io::ErrorKind::WouldBlock {
-						continue;
-					}
-					else {
-						return Err( err.into() );
-					},
-			};
-			let screen_next = unsafe { slice::from_raw_parts( screen_next.as_ptr() as *const u32, screen_next.len() / 4 ) };
-			if screen_next.len() != screen_prev.len() {
-				screen_prev = vec![ 0; screen_next.len() ];
-			}
-			let stride = screen_next.len() / h;
+			let prev_buf_len = buf.len();
+			buf.clear();
 
 			// framebuffer update header.
 			buf.write_u8( 0 )?; // message type: framebuffer update.
@@ -122,22 +108,45 @@ impl<Comparator: comparator::Comparator, Encoder: encoder::Encoder> VncServer<Co
 			let n_rects_index = buf.len();
 			buf.write_u16::<BigEndian>( 0 )?; // # of rectangles.
 
-			// search & encode update region.
-			let timer = time::SystemTime::now();
-			let mut n_rects = 0;
-			Comparator::compare( &mut screen_prev, &screen_next, stride, w, h, |x0, y0, x1, y1| {
-				buf.write_u16::<BigEndian>( x0 as u16 ).unwrap();
-				buf.write_u16::<BigEndian>( y0 as u16 ).unwrap();
-				buf.write_u16::<BigEndian>( (x1 - x0) as u16 ).unwrap();
-				buf.write_u16::<BigEndian>( (y1 - y0) as u16 ).unwrap();
-				encoder.encode( &mut buf, &screen_next[stride * y0 + x0..], stride, x1 - x0, y1 - y0 );
-				n_rects += 1;
-			} );
-			let elapsed = timer.elapsed().unwrap();
-			eprintln!( "encode: {:>3} ms, {:>4} KiB.",
-				elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1000000,
-				buf.len() / 1024,
-			);
+			let n_rects = {
+				// capture.
+				let next_screen = match cap.frame() {
+					Ok ( buf ) => buf,
+					Err( err ) =>
+						if err.kind() == io::ErrorKind::WouldBlock {
+							thread::sleep( time::Duration::from_secs( 1 ) / 120 );
+							continue;
+						}
+						else {
+							return Err( err.into() );
+						},
+				};
+				let next_screen = unsafe { slice::from_raw_parts(
+					next_screen.as_ptr() as *const u32, next_screen.len() / 4,
+				) };
+				if next_screen.len() != prev_screen.len() {
+					prev_screen = vec![ 0; next_screen.len() ];
+				}
+				let stride = next_screen.len() / h;
+
+				// search & encode update region.
+				let timer = time::SystemTime::now();
+				let mut n_rects = 0;
+				Comparator::compare( &mut prev_screen, &next_screen, stride, w, h, |x0, y0, x1, y1| {
+					buf.write_u16::<BigEndian>( x0 as u16 ).unwrap();
+					buf.write_u16::<BigEndian>( y0 as u16 ).unwrap();
+					buf.write_u16::<BigEndian>( (x1 - x0) as u16 ).unwrap();
+					buf.write_u16::<BigEndian>( (y1 - y0) as u16 ).unwrap();
+					encoder.encode( &mut buf, &next_screen[stride * y0 + x0..], stride, x1 - x0, y1 - y0 );
+					n_rects += 1;
+				} );
+				let elapsed = timer.elapsed().unwrap();
+				eprintln!( "  encode: {:>3} ms, {:>4} KiB.",
+					elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1000000, buf.len() / 1024,
+				);
+
+				n_rects
+			};
 
 			// rewrite # of rectangles.
 			BigEndian::write_u16( &mut buf[n_rects_index ..], n_rects );
@@ -146,7 +155,28 @@ impl<Comparator: comparator::Comparator, Encoder: encoder::Encoder> VncServer<Co
 			if n_rects > 0 {
 				stream.write_all( &buf )?;
 			}
-			buf.clear();
+
+			// throttle.
+			#[cfg( unix )]
+			{
+				use os::unix::io::AsRawFd;
+
+				let mut n = 0;
+				while {
+					let mut remaining: i32 = 0;
+					unsafe { libc::ioctl( stream.as_raw_fd(), libc::TIOCOUTQ, &mut remaining ) };
+					assert!( remaining >= 0 );
+					remaining as usize >= prev_buf_len + buf.len()
+				}
+				{
+					thread::sleep( time::Duration::from_secs( 1 ) / 120 );
+					n += 1;
+				}
+				if n > 0 {
+					eprintln!( "throttle: {:>3} ms", n * 1000 / 120 );
+					//cap.frame().ok();
+				}
+			}
 		}
 	}
 }

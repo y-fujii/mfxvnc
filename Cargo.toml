@@ -9,6 +9,7 @@ byteorder = "*"
 rand = "*"
 miniz_oxide = "*"
 scrap = "*"
+libc = "*"
 
 [profile.release]
 panic = "abort"
