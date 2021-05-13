@@ -1,10 +1,3 @@
-#[macro_use]
-extern crate packed_simd;
-extern crate byteorder;
-extern crate rand;
-extern crate miniz_oxide;
-extern crate scrap;
-extern crate libc;
 mod comparator;
 mod encoder;
 mod server;

@@ -1,7 +1,7 @@
 use std::*;
 use rand;
 use miniz_oxide::deflate;
-use packed_simd::{ u8x4, i8x4, i16x4, i32x4, FromCast, FromBits };
+use packed_simd::{ u8x4, i8x4, i16x4, i32x4, FromCast, FromBits, shuffle };
 
 
 pub trait Encoder {
