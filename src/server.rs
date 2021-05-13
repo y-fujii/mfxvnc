@@ -2,8 +2,8 @@ use std::*;
 use std::io::{ Read, Write };
 use byteorder::{ ByteOrder, ReadBytesExt, WriteBytesExt, BigEndian };
 use scrap;
-use comparator;
-use encoder;
+use crate::comparator;
+use crate::encoder;
 
 
 pub struct VncServer<Comparator: comparator::Comparator, Encoder: encoder::Encoder> {
