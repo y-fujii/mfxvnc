@@ -6,7 +6,7 @@ use packed_simd::{ u8x4, i8x4, i16x4, i32x4, FromCast, FromBits };
 
 pub trait Encoder {
 	fn new() -> Self;
-	fn encode( &mut self, &mut Vec<u8>, &[u32], usize, usize, usize );
+	fn encode( &mut self, _: &mut Vec<u8>, _: &[u32], _: usize, _: usize, _: usize );
 }
 
 pub struct RandomColorEncoder;

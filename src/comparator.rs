@@ -3,7 +3,7 @@ use packed_simd;
 
 
 pub trait Comparator {
-	fn compare<F: FnMut( usize, usize, usize, usize )>( &mut [u32], &[u32], usize, usize, usize, F );
+	fn compare<F: FnMut( usize, usize, usize, usize )>( _: &mut [u32], _: &[u32], _: usize, _: usize, _: usize, _: F );
 }
 
 pub struct BlockComparator;

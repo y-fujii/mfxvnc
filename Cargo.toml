@@ -4,8 +4,8 @@ version = "0.1.0"
 authors = ["Yasuhiro Fujii <y-fujii@mimosa-pudica.net>"]
 
 [dependencies]
-packed_simd = { version = "*", features = ["into_bits"] }
 byteorder = "*"
+packed_simd = { features = ["into_bits"], package = "packed_simd_2", git = "https://github.com/rust-lang/packed_simd.git" }
 rand = "*"
 miniz_oxide = "*"
 scrap = "*"

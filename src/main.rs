@@ -11,7 +11,7 @@ mod server;
 use std::*;
 
 
-fn main() -> Result<(), Box<error::Error>> {
+fn main() -> Result<(), Box<dyn error::Error>> {
 	//server::VncServer::<comparator::StripComparator, encoder::RandomColorEncoder>::listen( "0.0.0.0:5900" )?;
 	//server::VncServer::<comparator::StripComparator, encoder::TightRawEncoder>::listen( "0.0.0.0:5900" )?;
 	server::VncServer::<comparator::StripComparator, encoder::TightGradientEncoder>::listen( "0.0.0.0:5900" )?;

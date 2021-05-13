@@ -2,7 +2,6 @@ use std::*;
 use std::io::{ Read, Write };
 use byteorder::{ ByteOrder, ReadBytesExt, WriteBytesExt, BigEndian };
 use scrap;
-use libc;
 use comparator;
 use encoder;
 
@@ -159,6 +158,7 @@ impl<Comparator: comparator::Comparator, Encoder: encoder::Encoder> VncServer<Co
 			// throttle.
 			#[cfg( unix )]
 			{
+				use libc;
 				use os::unix::io::AsRawFd;
 
 				let mut n = 0;
