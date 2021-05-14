@@ -312,40 +312,20 @@ impl Encoder for TightAdaptiveEncoder {
     }
 }
 
-#[link(name = "turbojpeg")]
-extern "C" {
-    fn tjInitCompress() -> *mut os::raw::c_void;
-    fn tjDestroy(_: *mut os::raw::c_void) -> i32;
-    fn tjCompress2(
-        _: *mut os::raw::c_void,
-        _: *const u8,
-        _: i32,
-        _: i32,
-        _: i32,
-        _: i32,
-        _: *const *mut u8,
-        _: *mut usize,
-        _: i32,
-        _: i32,
-        _: i32,
-    ) -> i32;
-}
-
 pub struct TightJpegEncoder {
-    tj_handle: *mut os::raw::c_void,
+    compressor: *mut ffi::c_void,
 }
 
 impl Drop for TightJpegEncoder {
     fn drop(&mut self) {
-        unsafe { tjDestroy(self.tj_handle) };
+        unsafe { jpeg_compressor_destroy(self.compressor) };
     }
 }
 
 impl Encoder for TightJpegEncoder {
     fn new() -> Self {
-        let handle = unsafe { tjInitCompress() };
-        assert!(!handle.is_null());
-        TightJpegEncoder { tj_handle: handle }
+        let compressor = unsafe { jpeg_compressor_create() };
+        TightJpegEncoder { compressor: compressor }
     }
 
     fn encode(&mut self, out: &mut Vec<u8>, screen: &[u32], stride: usize, w: usize, h: usize) {
@@ -361,20 +341,16 @@ impl Encoder for TightJpegEncoder {
         out.extend(&[0, 0, 0]);
 
         let jpeg_index = out.len();
-        let mut jpeg_len = 0;
+        let jpeg_len;
         unsafe {
-            tjCompress2(
-                self.tj_handle,
-                screen.as_ptr() as *const u8,
-                w as i32,
-                (4 * stride) as i32,
-                h as i32,
-                3, // TJPF_BGRX.
-                &out.as_mut_ptr().add(jpeg_index),
-                &mut jpeg_len,
-                0,    // TJSAMP_444.
-                93,   // quality: 7-bit DC value.
-                1024, // TJFLAG_NOREALLOC.
+            jpeg_len = jpeg_compressor_compress(
+                self.compressor,
+                out.as_mut_ptr().add(jpeg_index),
+                out.capacity() - jpeg_index,
+                screen.as_ptr(),
+                stride,
+                w,
+                h,
             );
             out.set_len(jpeg_index + jpeg_len);
         }
@@ -384,4 +360,18 @@ impl Encoder for TightJpegEncoder {
         out[len_index + 1] = 0x80 | ((jpeg_len >> 7) & 0x7f) as u8;
         out[len_index + 2] = (jpeg_len >> 14) as u8;
     }
+}
+
+extern {
+    fn jpeg_compressor_create() -> *mut ffi::c_void;
+    fn jpeg_compressor_destroy(this: *mut ffi::c_void);
+    fn jpeg_compressor_compress(
+        this: *mut ffi::c_void,
+        dst: *mut u8,
+        dst_size: usize,
+        src: *const u32,
+        stride: usize,
+        w: usize,
+        h: usize,
+    ) -> usize;
 }

@@ -132,7 +132,7 @@ impl Comparator for StripComparator {
 pub struct QuadtreeComparator;
 
 impl QuadtreeComparator {
-    const TPIXELS: usize = 4096;
+    const TPIXELS: usize = 1024;
     const ALIGN_W: usize = 8;
     const ALIGN_H: usize = 8;
 }

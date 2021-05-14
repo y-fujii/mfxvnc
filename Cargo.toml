@@ -12,6 +12,9 @@ miniz_oxide = "*"
 scrap = "*"
 libc = "*"
 
+[build-dependencies]
+cc = "*"
+
 [profile.release]
 panic = "abort"
 lto = true
